@@ -1,6 +1,10 @@
 import React from 'react'
 
-const getTeam = (id, teams) => teams.find(t => t.id === id)
+const getTeam = (id, teams) => {
+  const safeId = (id && typeof id === 'object') ? id._id : id;
+  return teams.find(t => t.id === safeId)
+}
+const getId = (item) => (item && typeof item === 'object') ? item._id : item;
 
 const calculateStandings = (teams, matches) => {
   const standings = teams.map(team => ({
@@ -16,8 +20,12 @@ const calculateStandings = (teams, matches) => {
   }));
 
   matches.filter(m => m.estado === 'finalizado').forEach(match => {
-    const teamA = standings.find(t => t.id === match.equipoA);
-    const teamB = standings.find(t => t.id === match.equipoB);
+    // Usar getId para extraer el ID si viene populado
+    const idA = getId(match.equipoA);
+    const idB = getId(match.equipoB);
+
+    const teamA = standings.find(t => t.id === idA);
+    const teamB = standings.find(t => t.id === idB);
 
     if (teamA && teamB) {
       teamA.pj += 1;
@@ -50,16 +58,20 @@ const calculateStandings = (teams, matches) => {
 };
 
 
-export default function PublicView({data, onSelectTeam, onSelectMatch}){
+export default function PublicView({ data, onSelectTeam, onSelectMatch }) {
   const { teams, players, matches, groups } = data;
 
-  const upcomingMatches = matches.filter(m => m.estado === 'proximo').sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+  const upcomingMatches = matches.filter(m => m.estado === 'proximo').sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
   const topScorers = [...players].sort((a, b) => b.goles - a.goles).slice(0, 5);
   const topYellowCards = [...players].sort((a, b) => b.amarillas - a.amarillas).slice(0, 5);
   const topRedCards = [...players].sort((a, b) => b.rojas - a.rojas).slice(0, 5);
 
-  const standingsA = calculateStandings(teams.filter(t => t.grupoId === 'g1'), matches);
-  const standingsB = calculateStandings(teams.filter(t => t.grupoId === 'g2'), matches);
+  // Asumimos que hay al menos 2 grupos, tomamos sus IDs reales de la BD
+  const groupAId = groups[0]?.id;
+  const groupBId = groups[1]?.id;
+
+  const standingsA = calculateStandings(teams.filter(t => t.grupoId === groupAId), matches);
+  const standingsB = calculateStandings(teams.filter(t => t.grupoId === groupBId), matches);
 
   const semiFinals = [
     { match: 1, teamA: standingsA[0], teamB: standingsB[1] },
@@ -69,12 +81,14 @@ export default function PublicView({data, onSelectTeam, onSelectMatch}){
   return (
     <div className='p-4 md:p-6  min-h-screen'>
       <header className='text-center mb-8'>
-        <h1 className='text-4xl font-bold text-800'>Campeonato Interbarrios Huanchaco 2026</h1>
+        <h1 className='text-4xl font-bold text-800'>III TORNEO INTERNO PROMO 1996 Claretiano</h1>
+        <p className='text-lg text-600'>Verano apertura 2026</p>
         <p className='text-lg text-600'>Resultados y estadísticas del torneo</p>
+
       </header>
 
       <div className='grid md:grid-cols-3 gap-8'>
-        
+
         <div className='md:col-span-2 space-y-8'>
           {/* Standings */}
           <section>
@@ -119,8 +133,8 @@ export default function PublicView({data, onSelectTeam, onSelectMatch}){
             <h2 className='text-2xl font-semibold mb-4'>Partidos Finalizados</h2>
             <div className='space-y-4'>
               {matches.filter(m => m.estado === 'finalizado').map(m => {
-                const teamA = getTeam(m.equipoA, teams);
-                const teamB = getTeam(m.equipoB, teams);
+                const teamA = (m.equipoA && typeof m.equipoA === 'object') ? m.equipoA : getTeam(m.equipoA, teams);
+                const teamB = (m.equipoB && typeof m.equipoB === 'object') ? m.equipoB : getTeam(m.equipoB, teams);
                 if (!teamA || !teamB) return null;
                 return (
                   <div key={m.id} className='card p-4 cursor-pointer hover:bg-gray-800' onClick={() => onSelectMatch(m.id)}>
@@ -168,9 +182,11 @@ export default function PublicView({data, onSelectTeam, onSelectMatch}){
             <h2 className='text-2xl font-semibold mb-4'>Próximos Partidos 🥅</h2>
             <div className='space-y-4'>
               {upcomingMatches.map(m => {
-                const teamA = getTeam(m.equipoA, teams);
-                const teamB = getTeam(m.equipoB, teams);
-                if(!teamA || !teamB) return null;
+                // Si ya viene populado, usamos el objeto directo, si no buscamos por ID
+                const teamA = (m.equipoA && typeof m.equipoA === 'object') ? m.equipoA : getTeam(m.equipoA, teams);
+                const teamB = (m.equipoB && typeof m.equipoB === 'object') ? m.equipoB : getTeam(m.equipoB, teams);
+
+                if (!teamA || !teamB) return null;
                 return (
                   <div key={m.id} className='p-3 rounded-lg cursor-pointer hover:bg-gray-800' onClick={() => onSelectMatch(m.id)}>
                     <div className='text-xs text-gray-500'>{m.fecha} - {m.horario}</div>
@@ -195,7 +211,7 @@ export default function PublicView({data, onSelectTeam, onSelectMatch}){
                 return (
                   <li key={p.id} className='flex justify-between items-center'>
                     <div className='flex items-center gap-2'>
-                      <img src={p.foto} className='w-8 h-8 rounded-full object-cover' />
+                      <img src={p.image || p.foto} className='w-8 h-8 rounded-full object-cover' />
                       <div>
                         <div>{p.nombre}</div>
                         <div className='text-xs text-gray-500'>{team?.nombre}</div>
@@ -217,7 +233,7 @@ export default function PublicView({data, onSelectTeam, onSelectMatch}){
                 return (
                   <li key={p.id} className='flex justify-between items-center'>
                     <div className='flex items-center gap-2'>
-                      <img src={p.foto} className='w-8 h-8 rounded-full object-cover' />
+                      <img src={p.image || p.foto} className='w-8 h-8 rounded-full object-cover' />
                       <div>
                         <div>{p.nombre}</div>
                         <div className='text-xs text-gray-500'>{team?.nombre}</div>
@@ -239,7 +255,7 @@ export default function PublicView({data, onSelectTeam, onSelectMatch}){
                 return (
                   <li key={p.id} className='flex justify-between items-center'>
                     <div className='flex items-center gap-2'>
-                      <img src={p.foto} className='w-8 h-8 rounded-full object-cover' />
+                      <img src={p.image || p.foto} className='w-8 h-8 rounded-full object-cover' />
                       <div>
                         <div>{p.nombre}</div>
                         <div className='text-xs text-gray-500'>{team?.nombre}</div>

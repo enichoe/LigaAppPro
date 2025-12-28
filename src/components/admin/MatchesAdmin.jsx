@@ -1,44 +1,51 @@
-import React, {useState} from 'react'
+import React, { useState } from 'react'
+import { api } from '../../services/api'
 
-const EMPTY_FORM = {fecha:'', horario:'', ubicacion:'', equipoA:'', equipoB:'', golesA: '', golesB: '', estado: 'proximo'}
+const EMPTY_FORM = { fecha: '', horario: '', ubicacion: '', equipoA: '', equipoB: '', golesA: '', golesB: '', estado: 'proximo' }
 
-export default function MatchesAdmin({data, onSave}){
-  const [matches, setMatches] = useState(data.matches)
+export default function MatchesAdmin({ data, onReload }) {
+  // const [matches, setMatches] = useState(data.matches) -> Eliminado para usar data.matches directo
   const [form, setForm] = useState(EMPTY_FORM)
   const [editingId, setEditingId] = useState(null)
 
-  const handleSave = ()=>{
-    if(!form.fecha || !form.equipoA || !form.equipoB) return
-    
-    const matchData = {
-      ...form,
-      golesA: form.golesA === '' ? null : parseInt(form.golesA),
-      golesB: form.golesB === '' ? null : parseInt(form.golesB),
+  const handleSave = async () => {
+    if (!form.fecha || !form.equipoA || !form.equipoB) {
+      alert("Completa fecha y equipos");
+      return;
     }
 
-    let nextMatches;
-    if(editingId){
-      // Editing existing match
-      nextMatches = matches.map(m => m.id === editingId ? {...matchData, id: editingId} : m)
-    } else {
-      // Adding new match
-      const newMatch = {...matchData, id:'m'+Date.now()}
-      nextMatches = [newMatch, ...matches]
+    // Preparar payload limpando campos
+    const payload = {
+      ...form,
+      golesA: (form.golesA === '' || form.golesA === null) ? null : Number(form.golesA),
+      golesB: (form.golesB === '' || form.golesB === null) ? null : Number(form.golesB),
     }
-    
-    const next = {...data, matches: nextMatches}
-    setMatches(nextMatches); 
-    onSave(next)
-    setForm(EMPTY_FORM)
-    setEditingId(null)
+
+    try {
+      if (editingId) {
+        await api.updateMatch(editingId, payload)
+      } else {
+        await api.createMatch(payload)
+      }
+      onReload() // Llama a reload
+      setForm(EMPTY_FORM)
+      setEditingId(null)
+    } catch (e) {
+      alert("Error guardando partido: " + e.message)
+    }
   }
 
   const startEdit = (match) => {
     setEditingId(match.id)
     setForm({
-      ...match,
+      fecha: match.fecha,
+      horario: match.horario,
+      ubicacion: match.ubicacion,
+      equipoA: match.equipoA?._id || match.equipoA, // Soporte si viene poblado
+      equipoB: match.equipoB?._id || match.equipoB,
       golesA: match.golesA ?? '',
       golesB: match.golesB ?? '',
+      estado: match.estado
     })
   }
 
@@ -47,164 +54,172 @@ export default function MatchesAdmin({data, onSave}){
     setEditingId(null)
   }
 
-  const remove = (id)=>{
-    const nextMatches = matches.filter(x=>x.id!==id)
-    const next = {...data, matches: nextMatches}
-    setMatches(nextMatches); onSave(next)
+  const remove = async (id) => {
+    if (!window.confirm("Borrar partido?")) return;
+    try {
+      await api.deleteMatch(id)
+      onReload()
+    } catch (e) {
+      alert("Error eliminando: " + e.message)
+    }
   }
 
-  const getTeam = (id) => data.teams.find(t => t.id === id)
+  // Helper robusto para obtener equipo incluso si equipoA/B viene populado
+  const getTeam = (teamOrId) => {
+    const id = (teamOrId && typeof teamOrId === 'object') ? teamOrId._id : teamOrId;
+    return data.teams.find(t => t.id === id);
+  }
 
   return (
-   <div className="mb-6 p-5 bg-gray-800/60 backdrop-blur-md rounded-2xl border border-gray-700 space-y-4 shadow-lg">
-  <h3 className="text-2xl font-bold mb-4 text-800 border-b pb-2">🏟️ Gestión de Partidos</h3>
+    <div className="mb-6 p-5 bg-gray-800/60 backdrop-blur-md rounded-2xl border border-gray-700 space-y-4 shadow-lg">
+      <h3 className="text-2xl font-bold mb-4 text-800 border-b pb-2">🏟️ Gestión de Partidos</h3>
 
-  <div className="mb-6 p-5 bg-gray-800/60 backdrop-blur-md rounded-2xl border border-gray-700 space-y-4 shadow-lg">
-    <h4 className="font-semibold text-lg mb-3 text-700">
-      {editingId ? '✏️ Editando Partido' : '➕ Agregar Nuevo Partido'}
-    </h4>
+      <div className="mb-6 p-5 bg-gray-800/60 backdrop-blur-md rounded-2xl border border-gray-700 space-y-4 shadow-lg">
+        <h4 className="font-semibold text-lg mb-3 text-700">
+          {editingId ? '✏️ Editando Partido' : '➕ Agregar Nuevo Partido'}
+        </h4>
 
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-      <input
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
-        type="date"
-        value={form.fecha}
-        onChange={e => setForm({ ...form, fecha: e.target.value })}
-      />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <input
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
+            type="date"
+            value={form.fecha}
+            onChange={e => setForm({ ...form, fecha: e.target.value })}
+          />
 
-      <input
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400 bg-gray-900 text-white placeholder-gray-400 rounded-lg p-2"
-        type="time"
-        step="1800"
-        min="08:00"
-        max="22:00"
-        value={form.horario}
-        onChange={e => setForm({ ...form, horario: e.target.value })}
-      />
+          <input
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400 bg-gray-900 text-white placeholder-gray-400 rounded-lg p-2"
+            type="time"
+            step="1800"
+            min="08:00"
+            max="22:00"
+            value={form.horario}
+            onChange={e => setForm({ ...form, horario: e.target.value })}
+          />
 
-      <input
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400 col-span-2"
-        placeholder="Ubicación"
-        value={form.ubicacion}
-        onChange={e => setForm({ ...form, ubicacion: e.target.value })}
-      />
+          <input
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400 col-span-2"
+            placeholder="Ubicación"
+            value={form.ubicacion}
+            onChange={e => setForm({ ...form, ubicacion: e.target.value })}
+          />
 
-      <select
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
-        value={form.equipoA}
-        onChange={e => setForm({ ...form, equipoA: e.target.value })}
-      >
-        <option value="">-- Equipo A --</option>
-        {data.teams.map(t => (
-          <option key={t.id} value={t.id}>{t.nombre}</option>
-        ))}
-      </select>
+          <select
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
+            value={form.equipoA}
+            onChange={e => setForm({ ...form, equipoA: e.target.value })}
+          >
+            <option value="">-- Equipo A --</option>
+            {data.teams.map(t => (
+              <option key={t.id} value={t.id}>{t.nombre}</option>
+            ))}
+          </select>
 
-      <select
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
-        value={form.equipoB}
-        onChange={e => setForm({ ...form, equipoB: e.target.value })}
-      >
-        <option value="">-- Equipo B --</option>
-        {data.teams.map(t => (
-          <option key={t.id} value={t.id}>{t.nombre}</option>
-        ))}
-      </select>
+          <select
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
+            value={form.equipoB}
+            onChange={e => setForm({ ...form, equipoB: e.target.value })}
+          >
+            <option value="">-- Equipo B --</option>
+            {data.teams.map(t => (
+              <option key={t.id} value={t.id}>{t.nombre}</option>
+            ))}
+          </select>
 
-      <input
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
-        placeholder="Goles A"
-        type="number"
-        value={form.golesA}
-        onChange={e => setForm({ ...form, golesA: e.target.value })}
-      />
+          <input
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
+            placeholder="Goles A"
+            type="number"
+            value={form.golesA}
+            onChange={e => setForm({ ...form, golesA: e.target.value })}
+          />
 
-      <input
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
-        placeholder="Goles B"
-        type="number"
-        value={form.golesB}
-        onChange={e => setForm({ ...form, golesB: e.target.value })}
-      />
+          <input
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400"
+            placeholder="Goles B"
+            type="number"
+            value={form.golesB}
+            onChange={e => setForm({ ...form, golesB: e.target.value })}
+          />
 
-      <select
-        className="input border-gray-300 focus:ring-2 focus:ring-blue-400 col-span-2 md:col-span-4"
-        value={form.estado}
-        onChange={e => setForm({ ...form, estado: e.target.value })}
-      >
-        <option value="proximo">Próximo</option>
-        <option value="finalizado">Finalizado</option>
-      </select>
-    </div>
-
-    <div className="flex gap-3">
-      <button
-        onClick={handleSave}
-        className="btn bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-      >
-        {editingId ? '💾 Guardar Cambios' : 'Agregar Partido'}
-      </button>
-
-      {editingId && (
-        <button
-          onClick={cancelEdit}
-          className="btn-secondary border border-gray-300 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
-        >
-          Cancelar
-        </button>
-      )}
-    </div>
-  </div>
-
-  <div className="space-y-3">
-    {matches.map(m => {
-      const teamA = getTeam(m.equipoA)
-      const teamB = getTeam(m.equipoB)
-      if (!teamA || !teamB) return null
-
-      return (
-        <div
-          key={m.id}
-          className="card input col-span-2 text-white bg-gray-900 border-gray-700  transition-all duration-200 flex flex-col sm:flex-row justify-between items-center gap-3 p-4 rounded-lg shadow-sm"
-        >
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-2 font-bold text-700">
-              <img src={teamA.logo} className="w-10 h-10 object-contain" /> {teamA.nombre}
-            </div>
-
-            <div className="text-center">
-              {m.estado === 'finalizado' ? (
-                <div className="text-2xl font-bold text-900">{m.golesA} - {m.golesB}</div>
-              ) : (
-                <div className="text-lg font-semibold text-blue-700">{m.horario}</div>
-              )}
-              <div className="text-xs text-gray-300">{m.fecha} - {m.ubicacion}</div>
-            </div>
-
-            <div className="flex items-center gap-2 font-bold text-700 text-right">
-              {teamB.nombre} <img src={teamB.logo} className="w-10 h-10 object-contain" />
-            </div>
-          </div>
-
-          <div className="flex gap-2 border-t sm:border-t-0 sm:border-l pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto justify-end">
-            <button
-              onClick={() => startEdit(m)}
-              className="px-3 py-1 rounded-md border border-blue-400 text-blue-500 hover:bg-blue-500 hover:text-white transition-all"
-            >
-              Editar
-            </button>
-            <button
-              onClick={() => remove(m.id)}
-              className="px-3 py-1 rounded-md border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-all"
-            >
-              Eliminar
-            </button>
-          </div>
+          <select
+            className="input border-gray-300 focus:ring-2 focus:ring-blue-400 col-span-2 md:col-span-4"
+            value={form.estado}
+            onChange={e => setForm({ ...form, estado: e.target.value })}
+          >
+            <option value="proximo">Próximo</option>
+            <option value="finalizado">Finalizado</option>
+          </select>
         </div>
-      )
-    })}
-  </div>
-</div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={handleSave}
+            className="btn bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            {editingId ? '💾 Guardar Cambios' : 'Agregar Partido'}
+          </button>
+
+          {editingId && (
+            <button
+              onClick={cancelEdit}
+              className="btn-secondary border border-gray-300 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Cancelar
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {data.matches.map(m => {
+          const teamA = getTeam(m.equipoA)
+          const teamB = getTeam(m.equipoB)
+          if (!teamA || !teamB) return null
+
+          return (
+            <div
+              key={m.id}
+              className="card input col-span-2 text-white bg-gray-900 border-gray-700  transition-all duration-200 flex flex-col sm:flex-row justify-between items-center gap-3 p-4 rounded-lg shadow-sm"
+            >
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2 font-bold text-700">
+                  <img src={teamA.logo} className="w-10 h-10 object-contain" /> {teamA.nombre}
+                </div>
+
+                <div className="text-center">
+                  {m.estado === 'finalizado' ? (
+                    <div className="text-2xl font-bold text-900">{m.golesA} - {m.golesB}</div>
+                  ) : (
+                    <div className="text-lg font-semibold text-blue-700">{m.horario}</div>
+                  )}
+                  <div className="text-xs text-gray-300">{m.fecha} - {m.ubicacion}</div>
+                </div>
+
+                <div className="flex items-center gap-2 font-bold text-700 text-right">
+                  {teamB.nombre} <img src={teamB.logo} className="w-10 h-10 object-contain" />
+                </div>
+              </div>
+
+              <div className="flex gap-2 border-t sm:border-t-0 sm:border-l pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto justify-end">
+                <button
+                  onClick={() => startEdit(m)}
+                  className="px-3 py-1 rounded-md border border-blue-400 text-blue-500 hover:bg-blue-500 hover:text-white transition-all"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => remove(m.id)}
+                  className="px-3 py-1 rounded-md border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-all"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
 
   )
 }
